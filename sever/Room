@@ -1,6 +1,7 @@
 package server;
 
 import java.util.ArrayList;
+import java.util.Random;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -13,6 +14,10 @@ public class Room {
     private Timer gameTimer;
     private int secondsLeft;
 
+    private char currentLetter;
+    private int currentRound = 0;
+    private final int TOTAL_ROUNDS = 5;
+
     public Room(boolean isWaitingQueue, ServerGUI serverGUI) {
         this.players = new ArrayList<>();
         this.isWaitingQueue = isWaitingQueue;
@@ -20,19 +25,13 @@ public class Room {
     }
 
     public synchronized boolean addPlayer(ClientHandler player) {
-        if (players.contains(player)) {
-            return false;
-        }
+        if (players.contains(player)) return false;
 
         if (isWaitingQueue) {
             players.add(player);
             broadcastRoomUpdate();
-            
-            if (serverGUI.isPlayRoomFull()) {
-                player.sendMessage("PLAY_ROOM_FULL");
-            } else {
-                player.sendMessage("PLAY_ROOM_AVAILABLE");
-            }
+            if (serverGUI.isPlayRoomFull()) player.sendMessage("PLAY_ROOM_FULL");
+            else player.sendMessage("PLAY_ROOM_AVAILABLE");
             return true;
         }
 
@@ -44,59 +43,114 @@ public class Room {
         player.sendMessage("ROOM_TYPE:PLAY_ROOM");
         broadcastRoomUpdate();
 
-        if (isFullOrStarted()) {
-            serverGUI.broadcastToLobby("PLAY_ROOM_FULL");
-        }
+        if (isFullOrStarted()) serverGUI.broadcastToLobby("PLAY_ROOM_FULL");
 
-        if (players.size() == 2 && !isGameStarted) {
-            startTimer();
-        } else if (players.size() == MAX_PLAYERS && !isGameStarted) {
-            startGame();
-        }
+        if (players.size() == 2 && !isGameStarted) startTimer();
+        else if (players.size() == MAX_PLAYERS && !isGameStarted) startGame();
 
         return true;
+    }
+
+    public synchronized void processSubmittedWord(ClientHandler player, String word) {
+        if (!isGameStarted || word.isEmpty()) return;
+
+        char requiredChar = Character.toLowerCase(this.currentLetter);
+        if (word.charAt(0) != requiredChar) {
+            player.sendMessage("NOTIFICATION:❌ Word must start with " + currentLetter);
+            return;
+        }
+
+        int points = word.length();
+        player.addScore(points); 
+        
+        broadcastToRoom("NOTIFICATION:⭐ " + player.getClientName() + " got " + points + " points with: " + word);
+        broadcastScores();
+    }
+
+    private void broadcastScores() {
+        StringBuilder scoresMsg = new StringBuilder("SCORES:");
+        for (ClientHandler p : players) {
+            scoresMsg.append(p.getClientName()).append(": ").append(p.getScore()).append(" pts, ");
+        }
+        broadcastToRoom(scoresMsg.toString());
+    }
+
+    private void startNewRound() {
+        currentRound++;
+        if (currentRound <= TOTAL_ROUNDS) {
+            Random r = new Random();
+            currentLetter = (char) (r.nextInt(26) + 'A');
+            broadcastToRoom("NOTIFICATION:Round " + currentRound + " of " + TOTAL_ROUNDS);
+            broadcastToRoom("NEW_LETTER:" + currentLetter);
+        } else {
+            endGame();
+        }
+    }
+
+    private void endGame() {
+        isGameStarted = false;
+        ClientHandler winner = null;
+        int maxScore = -1;
+
+        for (ClientHandler p : players) {
+            if (p.getScore() > maxScore) {
+                maxScore = p.getScore();
+                winner = p;
+            }
+        }
+
+        if (winner != null && maxScore > 0) {
+            broadcastToRoom("NOTIFICATION:🏆 Game Over! Winner: " + winner.getClientName() + " with " + maxScore + " pts");
+            broadcastToRoom("GAME_WINNER:" + winner.getClientName());
+        } else {
+            broadcastToRoom("NOTIFICATION:🏁 Game Over with no winner.");
+        }
+    }
+
+    private synchronized void startGame() {
+        if (isGameStarted) return;
+        isGameStarted = true;
+        if (gameTimer != null) gameTimer.cancel();
+        
+        broadcastToRoom("TIMER_STOP");
+        broadcastToRoom("NOTIFICATION:🔥 Battle Started! Type the longest word.");
+        serverGUI.broadcastToLobby("PLAY_ROOM_FULL");
+        
+        startNewRound(); 
     }
 
     public synchronized void removePlayer(ClientHandler player) {
         players.remove(player);
         broadcastRoomUpdate();
-
         if (!isWaitingQueue) { 
             if (players.size() < 2 && gameTimer != null && !isGameStarted) {
                 gameTimer.cancel();
                 gameTimer = null;
                 broadcastToRoom("TIMER_STOP");
             }
-            
-            if (!isFullOrStarted() && !isGameStarted) {
-                serverGUI.broadcastToLobby("PLAY_ROOM_AVAILABLE");
-            }
+            if (!isFullOrStarted() && !isGameStarted) serverGUI.broadcastToLobby("PLAY_ROOM_AVAILABLE");
         }
     }
 
     private void broadcastRoomUpdate() {
         String prefix = isWaitingQueue ? "LOBBY_UPDATE:" : "ROOM_UPDATE:";
         StringBuilder names = new StringBuilder(prefix);
-        for (ClientHandler p : players) {
-            names.append(p.getClientName()).append(",");
-        }
+        for (ClientHandler p : players) names.append(p.getClientName()).append(",");
         broadcastToRoom(names.toString());
     }
 
     public void broadcastToRoom(String msg) {
-        for (ClientHandler p : players) {
-            p.sendMessage(msg);
-        }
+        for (ClientHandler p : players) p.sendMessage(msg);
     }
 
     public boolean isFullOrStarted() {
         return players.size() >= MAX_PLAYERS || isGameStarted;
     }
 
+    public boolean isGameStarted() { return isGameStarted; }
+
     private void startTimer() {
-        if (gameTimer != null) {
-            gameTimer.cancel();
-        }
+        if (gameTimer != null) gameTimer.cancel();
         secondsLeft = 30;
         gameTimer = new Timer();
         gameTimer.scheduleAtFixedRate(new TimerTask() {
@@ -105,21 +159,8 @@ public class Room {
                 if (secondsLeft > 0) {
                     broadcastToRoom("TIMER_UPDATE:" + secondsLeft);
                     secondsLeft--;
-                } else {
-                    startGame();
-                }
+                } else startGame();
             }
         }, 0, 1000);
-    }
-
-    private synchronized void startGame() {
-        if (isGameStarted) return;
-        isGameStarted = true;
-        if (gameTimer != null) {
-            gameTimer.cancel();
-        }
-        broadcastToRoom("TIMER_STOP");
-        broadcastToRoom("NOTIFICATION:🔥 GAME STARTED! 🔥");
-        serverGUI.broadcastToLobby("PLAY_ROOM_FULL");
     }
 }
