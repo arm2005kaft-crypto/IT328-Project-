@@ -1,1 +1,73 @@
+package server;
 
+import java.io.*;
+import java.net.Socket;
+
+public class ClientHandler implements Runnable {
+    private Socket socket;
+    private BufferedReader in;
+    private PrintWriter out;
+    private String clientName;
+    private ServerGUI serverGUI;
+    private Room currentRoom;
+
+    public ClientHandler(Socket socket, ServerGUI gui) throws IOException {
+        this.socket = socket;
+        this.serverGUI = gui;
+        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        out = new PrintWriter(socket.getOutputStream(), true);
+    }
+
+    @Override
+    public void run() {
+        try {
+            while (true) {
+                String request = in.readLine();
+                if (request == null) break;
+
+                if (request.startsWith("CONNECT:")) {
+                    this.clientName = request.split(":")[1];
+                    serverGUI.addConnectedPlayer(clientName);
+                    sendMessage("CONNECTED");
+                    serverGUI.assignToLobby(this);
+                } 
+                else if (request.equals("PLAY")) {
+                    serverGUI.assignPlayerToRoom(this);
+                }
+                else if (request.equals("QUIT")) {
+                    break;
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("Player disconnected unexpectedly.");
+        } finally {
+            disconnect();
+        }
+    }
+
+    public void sendMessage(String msg) {
+        out.println(msg);
+    }
+
+    public String getClientName() {
+        return clientName;
+    }
+
+    public void setCurrentRoom(Room room) {
+        this.currentRoom = room;
+    }
+
+    private void disconnect() {
+        try {
+            serverGUI.removeConnectedPlayer(clientName);
+            if (currentRoom != null) {
+                currentRoom.removePlayer(this);
+            }
+            in.close();
+            out.close();
+            socket.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
