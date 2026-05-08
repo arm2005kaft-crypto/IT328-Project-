@@ -1,1 +1,287 @@
+package client;
 
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import java.awt.*;
+import java.io.*;
+import java.net.Socket;
+
+public class ClientGUI extends JFrame {
+    private Socket socket;
+    private BufferedReader in;
+    private PrintWriter out;
+    
+    private JPanel loginPanel, lobbyPanel, playRoomPanel;
+    private JTextField nameField;
+    private JButton connectBtn, joinBtn;
+    
+    private DefaultListModel<String> lobbyModel;
+    private JList<String> lobbyList;
+    
+    private DefaultListModel<String> roomModel;
+    private JList<String> roomList;
+    
+    private JLabel timerLabel;
+
+    public ClientGUI() {
+        try {
+            UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");
+        } catch (Exception e) {}
+
+        setTitle("🎮 My Fashion World - Multiplayer");
+        setSize(450, 450);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new CardLayout());
+        setLocationRelativeTo(null);
+
+        setupLoginPanel();
+        setupLobbyPanel();
+        setupPlayRoomPanel();
+
+        add(loginPanel, "LOGIN");
+        add(lobbyPanel, "LOBBY");
+        add(playRoomPanel, "PLAY_ROOM");
+        
+        setVisible(true);
+    }
+
+    private void setupLoginPanel() {
+        loginPanel = new JPanel();
+        loginPanel.setLayout(new BoxLayout(loginPanel, BoxLayout.Y_AXIS));
+        loginPanel.setBackground(new Color(44, 62, 80));
+        loginPanel.setBorder(new EmptyBorder(50, 50, 50, 50));
+
+        JLabel titleLabel = new JLabel("WELCOME PLAYER");
+        titleLabel.setFont(new Font("Verdana", Font.BOLD, 24));
+        titleLabel.setForeground(Color.WHITE);
+        titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        nameField = new JTextField(15);
+        nameField.setFont(new Font("Tahoma", Font.BOLD, 18));
+        nameField.setHorizontalAlignment(JTextField.CENTER);
+        nameField.setMaximumSize(new Dimension(250, 40));
+        nameField.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        connectBtn = new JButton("CONNECT");
+        connectBtn.setFont(new Font("Tahoma", Font.BOLD, 16));
+        connectBtn.setBackground(new Color(52, 152, 219));
+        connectBtn.setForeground(Color.WHITE);
+        connectBtn.setFocusPainted(false);
+        connectBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+        connectBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        connectBtn.addActionListener(e -> {
+            connectBtn.setEnabled(false);
+            connectToServer();
+        });
+
+        loginPanel.add(titleLabel);
+        loginPanel.add(Box.createRigidArea(new Dimension(0, 30)));
+        loginPanel.add(nameField);
+        loginPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+        loginPanel.add(connectBtn);
+    }
+
+    private void setupLobbyPanel() {
+        lobbyPanel = new JPanel(new BorderLayout(10, 10));
+        lobbyPanel.setBackground(new Color(44, 62, 80));
+        lobbyPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
+
+        JLabel title = new JLabel("🌐 CONNECTED PEOPLE", SwingConstants.CENTER);
+        title.setFont(new Font("Verdana", Font.BOLD, 22));
+        title.setForeground(new Color(52, 152, 219));
+
+        lobbyModel = new DefaultListModel<>();
+        lobbyList = new JList<>(lobbyModel);
+        lobbyList.setFont(new Font("Tahoma", Font.BOLD, 18));
+        lobbyList.setBackground(new Color(52, 73, 94));
+        lobbyList.setForeground(Color.WHITE);
+        
+        JScrollPane scrollPane = new JScrollPane(lobbyList);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(52, 152, 219), 2));
+
+        joinBtn = new JButton("PLAY ROOM");
+        joinBtn.setFont(new Font("Tahoma", Font.BOLD, 20));
+        joinBtn.setBackground(new Color(46, 204, 113));
+        joinBtn.setForeground(Color.WHITE);
+        joinBtn.setFocusPainted(false);
+        joinBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        joinBtn.addActionListener(e -> {
+            out.println("PLAY");
+        });
+
+        JPanel bottomPanel = new JPanel();
+        bottomPanel.setBackground(new Color(44, 62, 80));
+        bottomPanel.add(joinBtn);
+
+        lobbyPanel.add(title, BorderLayout.NORTH);
+        lobbyPanel.add(scrollPane, BorderLayout.CENTER);
+        lobbyPanel.add(bottomPanel, BorderLayout.SOUTH);
+    }
+
+    private void setupPlayRoomPanel() {
+        playRoomPanel = new JPanel(new BorderLayout(10, 10));
+        playRoomPanel.setBackground(new Color(44, 62, 80));
+        playRoomPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
+
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.setBackground(new Color(44, 62, 80));
+
+        timerLabel = new JLabel(" ");
+        timerLabel.setFont(new Font("Tahoma", Font.BOLD, 20));
+        timerLabel.setForeground(new Color(241, 196, 15));
+        timerLabel.setPreferredSize(new Dimension(80, 30));
+
+        JLabel lobbyTitle = new JLabel("🎮 PLAY ROOM", SwingConstants.CENTER);
+        lobbyTitle.setFont(new Font("Verdana", Font.BOLD, 22));
+        lobbyTitle.setForeground(new Color(46, 204, 113));
+
+        JLabel dummyLabel = new JLabel(" ");
+        dummyLabel.setPreferredSize(new Dimension(80, 30));
+
+        topPanel.add(timerLabel, BorderLayout.WEST);
+        topPanel.add(lobbyTitle, BorderLayout.CENTER);
+        topPanel.add(dummyLabel, BorderLayout.EAST);
+
+        roomModel = new DefaultListModel<>();
+        roomList = new JList<>(roomModel);
+        roomList.setFont(new Font("Tahoma", Font.BOLD, 18));
+        roomList.setBackground(new Color(52, 73, 94));
+        roomList.setForeground(Color.WHITE);
+        
+        JScrollPane scrollPane = new JScrollPane(roomList);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(46, 204, 113), 2));
+
+        playRoomPanel.add(topPanel, BorderLayout.NORTH);
+        playRoomPanel.add(scrollPane, BorderLayout.CENTER);
+    }
+
+    private void connectToServer() {
+        String name = nameField.getText().trim();
+        if (name.isEmpty()) {
+            connectBtn.setEnabled(true);
+            return;
+        }
+
+        try {
+            socket = new Socket("localhost", 9090); 
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
+
+            out.println("CONNECT:" + name);
+            new Thread(new ServerListener()).start();
+
+        } catch (IOException ex) {
+            connectBtn.setEnabled(true);
+            showToast("Server is offline!", 3000, 0);
+        }
+    }
+
+    private void showToast(String message, int duration, int yOffset) {
+        JDialog toast = new JDialog(this, false);
+        toast.setUndecorated(true);
+        
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBackground(new Color(33, 47, 61));
+        
+        panel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(70, 255, 113), 4),
+            new EmptyBorder(20, 40, 20, 40)
+        ));
+
+        JLabel label = new JLabel(message);
+        label.setForeground(Color.WHITE);
+        label.setFont(new Font("Tahoma", Font.BOLD, 16));
+        label.setHorizontalAlignment(SwingConstants.CENTER);
+        
+        panel.add(label);
+        toast.add(panel);
+        toast.pack();
+        
+        toast.setLocationRelativeTo(this);
+        toast.setLocation(toast.getX(), toast.getY() - yOffset);
+        toast.setVisible(true);
+
+        Timer timer = new Timer(duration, e -> toast.dispose());
+        timer.setRepeats(false);
+        timer.start();
+    }
+
+    private class ServerListener implements Runnable {
+        @Override
+        public void run() {
+            try {
+                String response;
+                while ((response = in.readLine()) != null) {
+                    if (response.equals("CONNECTED")) {
+                        SwingUtilities.invokeLater(() -> {
+                            showToast("Connected successfully!", 2000, 80);
+                            CardLayout cl = (CardLayout) getContentPane().getLayout();
+                            cl.show(getContentPane(), "LOBBY");
+                            setTitle("🎮 Player: " + nameField.getText()); 
+                        });
+                    } 
+                    else if (response.equals("PLAY_ROOM_FULL")) {
+                        SwingUtilities.invokeLater(() -> {
+                            joinBtn.setEnabled(false);
+                            joinBtn.setBackground(Color.GRAY);
+                            joinBtn.setText("ROOM FULL");
+                        });
+                    }
+                    else if (response.equals("PLAY_ROOM_AVAILABLE")) {
+                        SwingUtilities.invokeLater(() -> {
+                            joinBtn.setEnabled(true);
+                            joinBtn.setBackground(new Color(46, 204, 113));
+                            joinBtn.setText("PLAY ROOM");
+                        });
+                    }
+                    else if (response.startsWith("LOBBY_UPDATE:")) {
+                        String[] names = response.substring(13).split(",");
+                        SwingUtilities.invokeLater(() -> {
+                            lobbyModel.clear();
+                            for (String n : names) {
+                                if(!n.isEmpty()) lobbyModel.addElement("🟢 " + n);
+                            }
+                        });
+                    }
+                    else if (response.startsWith("ROOM_UPDATE:")) {
+                        String[] names = response.substring(12).split(",");
+                        SwingUtilities.invokeLater(() -> {
+                            roomModel.clear();
+                            for (String n : names) {
+                                if(!n.isEmpty()) roomModel.addElement("👤 " + n);
+                            }
+                        });
+                    }
+                    else if (response.startsWith("TIMER_UPDATE:")) {
+                        String time = response.substring(13);
+                        SwingUtilities.invokeLater(() -> timerLabel.setText("⏳ " + time));
+                    }
+                    else if (response.equals("TIMER_STOP")) {
+                        SwingUtilities.invokeLater(() -> timerLabel.setText(" "));
+                    }
+                    else if (response.startsWith("ROOM_TYPE:")) {
+                        String type = response.substring(10);
+                        SwingUtilities.invokeLater(() -> {
+                            if (type.equals("PLAY_ROOM")) {
+                                CardLayout cl = (CardLayout) getContentPane().getLayout();
+                                cl.show(getContentPane(), "PLAY_ROOM");
+                            }
+                        });
+                    }
+                    else if (response.startsWith("NOTIFICATION:")) {
+                        String msg = response.substring(13);
+                        SwingUtilities.invokeLater(() -> showToast(msg, 3000, 0));
+                    }
+                }
+            } catch (IOException e) {
+                System.out.println("Connection lost.");
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        new ClientGUI();
+    }
+}
