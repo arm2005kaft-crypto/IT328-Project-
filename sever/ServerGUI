@@ -1,1 +1,108 @@
+package server;
 
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import java.awt.*;
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.Socket;
+
+public class ServerGUI extends JFrame {
+    private DefaultListModel<String> connectedPlayersModel;
+    private JList<String> connectedPlayersList;
+    private Room playRoom;
+    private Room lobbyRoom; 
+
+    public ServerGUI() {
+        try {
+            UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");
+        } catch (Exception e) {}
+
+        setTitle("⚙️ Server Dashboard");
+        setSize(350, 450);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        getContentPane().setBackground(new Color(33, 47, 61));
+        
+        connectedPlayersModel = new DefaultListModel<>();
+        connectedPlayersList = new JList<>(connectedPlayersModel);
+        
+        playRoom = new Room(false, this);
+        lobbyRoom = new Room(true, this);
+        
+        connectedPlayersList.setBackground(new Color(23, 32, 42));
+        connectedPlayersList.setForeground(new Color(46, 204, 113));
+        connectedPlayersList.setFont(new Font("Monospaced", Font.BOLD, 16));
+        connectedPlayersList.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        JLabel titleLabel = new JLabel("🟢 Live Connected Players:");
+        titleLabel.setForeground(Color.WHITE);
+        titleLabel.setFont(new Font("Tahoma", Font.BOLD, 16));
+        titleLabel.setBorder(new EmptyBorder(15, 15, 10, 15));
+        
+        JScrollPane scrollPane = new JScrollPane(connectedPlayersList);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(46, 204, 113), 2));
+
+        setLayout(new BorderLayout());
+        add(titleLabel, BorderLayout.NORTH);
+        
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.setBackground(new Color(33, 47, 61));
+        centerPanel.setBorder(new EmptyBorder(0, 15, 15, 15));
+        centerPanel.add(scrollPane, BorderLayout.CENTER);
+        
+        add(centerPanel, BorderLayout.CENTER);
+        
+        setVisible(true);
+        startServer();
+    }
+
+    private void startServer() {
+        new Thread(() -> {
+            try (ServerSocket serverSocket = new ServerSocket(9090)) {
+                System.out.println("Server is running on port 9090...");
+                while (true) {
+                    Socket clientSocket = serverSocket.accept();
+                    ClientHandler handler = new ClientHandler(clientSocket, this);
+                    new Thread(handler).start();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }).start();
+    }
+
+    public synchronized void addConnectedPlayer(String name) {
+        SwingUtilities.invokeLater(() -> connectedPlayersModel.addElement("▶️ " + name));
+    }
+
+    public synchronized void removeConnectedPlayer(String name) {
+        SwingUtilities.invokeLater(() -> connectedPlayersModel.removeElement("▶️ " + name));
+    }
+
+    public synchronized void assignToLobby(ClientHandler player) {
+        lobbyRoom.addPlayer(player);
+        player.setCurrentRoom(lobbyRoom);
+    }
+
+    public synchronized void assignPlayerToRoom(ClientHandler player) {
+        if (!playRoom.isFullOrStarted()) {
+            lobbyRoom.removePlayer(player); 
+            playRoom.addPlayer(player);
+            player.setCurrentRoom(playRoom);
+        } else {
+            player.sendMessage("NOTIFICATION:Play Room is currently full!");
+        }
+    }
+
+    public boolean isPlayRoomFull() {
+        return playRoom.isFullOrStarted();
+    }
+
+    public void broadcastToLobby(String msg) {
+        lobbyRoom.broadcastToRoom(msg);
+    }
+
+    public static void main(String[] args) {
+        new ServerGUI();
+    }
+}
