@@ -1,1 +1,125 @@
+package server;
 
+import java.util.ArrayList;
+import java.util.Timer;
+import java.util.TimerTask;
+
+public class Room {
+    private ArrayList<ClientHandler> players;
+    private final int MAX_PLAYERS = 4;
+    private boolean isGameStarted = false;
+    private boolean isWaitingQueue;
+    private ServerGUI serverGUI;
+    private Timer gameTimer;
+    private int secondsLeft;
+
+    public Room(boolean isWaitingQueue, ServerGUI serverGUI) {
+        this.players = new ArrayList<>();
+        this.isWaitingQueue = isWaitingQueue;
+        this.serverGUI = serverGUI;
+    }
+
+    public synchronized boolean addPlayer(ClientHandler player) {
+        if (players.contains(player)) {
+            return false;
+        }
+
+        if (isWaitingQueue) {
+            players.add(player);
+            broadcastRoomUpdate();
+            
+            if (serverGUI.isPlayRoomFull()) {
+                player.sendMessage("PLAY_ROOM_FULL");
+            } else {
+                player.sendMessage("PLAY_ROOM_AVAILABLE");
+            }
+            return true;
+        }
+
+        for (ClientHandler p : players) {
+            p.sendMessage("NOTIFICATION:Player " + player.getClientName() + " has joined the Play Room!");
+        }
+
+        players.add(player);
+        player.sendMessage("ROOM_TYPE:PLAY_ROOM");
+        broadcastRoomUpdate();
+
+        if (isFullOrStarted()) {
+            serverGUI.broadcastToLobby("PLAY_ROOM_FULL");
+        }
+
+        if (players.size() == 2 && !isGameStarted) {
+            startTimer();
+        } else if (players.size() == MAX_PLAYERS && !isGameStarted) {
+            startGame();
+        }
+
+        return true;
+    }
+
+    public synchronized void removePlayer(ClientHandler player) {
+        players.remove(player);
+        broadcastRoomUpdate();
+
+        if (!isWaitingQueue) { 
+            if (players.size() < 2 && gameTimer != null && !isGameStarted) {
+                gameTimer.cancel();
+                gameTimer = null;
+                broadcastToRoom("TIMER_STOP");
+            }
+            
+            if (!isFullOrStarted() && !isGameStarted) {
+                serverGUI.broadcastToLobby("PLAY_ROOM_AVAILABLE");
+            }
+        }
+    }
+
+    private void broadcastRoomUpdate() {
+        String prefix = isWaitingQueue ? "LOBBY_UPDATE:" : "ROOM_UPDATE:";
+        StringBuilder names = new StringBuilder(prefix);
+        for (ClientHandler p : players) {
+            names.append(p.getClientName()).append(",");
+        }
+        broadcastToRoom(names.toString());
+    }
+
+    public void broadcastToRoom(String msg) {
+        for (ClientHandler p : players) {
+            p.sendMessage(msg);
+        }
+    }
+
+    public boolean isFullOrStarted() {
+        return players.size() >= MAX_PLAYERS || isGameStarted;
+    }
+
+    private void startTimer() {
+        if (gameTimer != null) {
+            gameTimer.cancel();
+        }
+        secondsLeft = 30;
+        gameTimer = new Timer();
+        gameTimer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                if (secondsLeft > 0) {
+                    broadcastToRoom("TIMER_UPDATE:" + secondsLeft);
+                    secondsLeft--;
+                } else {
+                    startGame();
+                }
+            }
+        }, 0, 1000);
+    }
+
+    private synchronized void startGame() {
+        if (isGameStarted) return;
+        isGameStarted = true;
+        if (gameTimer != null) {
+            gameTimer.cancel();
+        }
+        broadcastToRoom("TIMER_STOP");
+        broadcastToRoom("NOTIFICATION:🔥 GAME STARTED! 🔥");
+        serverGUI.broadcastToLobby("PLAY_ROOM_FULL");
+    }
+}
